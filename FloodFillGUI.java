@@ -1,113 +1,104 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.util.Scanner;
-import java.util.HashSet;
-import java.util.Set;
 
 public class FloodFillGUI extends JFrame {
     private BufferedImage image;
     private JLabel imageLabel;
+    private boolean[][] visitado; // Matriz para marcar pixels já processados
 
     public FloodFillGUI(String imagePath, int startX, int startY) {
-        setTitle("Flood Fill - Coordenado");
+        setTitle("Flood Fill - Automático");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
+        // Carrega a imagem
         image = ImageLoader.loadImage(imagePath);
         if (image == null) {
             System.out.println("Erro ao carregar a imagem.");
             System.exit(1);
         }
 
+        // Inicializa a matriz de controle
+        visitado = new boolean[image.getWidth()][image.getHeight()];
+
+        // Cria JLabel com a imagem
         imageLabel = new JLabel(new ImageIcon(image));
         add(imageLabel, BorderLayout.CENTER);
 
-        setSize(500, 500);
+        setSize(image.getWidth(), image.getHeight());
         setLocationRelativeTo(null);
+        setSize(500, 500);
         setVisible(true);
 
+        // Inicia o Flood Fill no ponto inicial
         iniciarFloodFill(startX, startY, Color.BLUE.getRGB());
+
+        // Após processar o ponto inicial, verificar o restante da imagem
+        verificarImagem(Color.BLUE.getRGB());
+
+        // Salva a imagem
         ImageSaver.saveImage(image, "output.png");
     }
 
     private void iniciarFloodFill(int x, int y, int novaCor) {
+        if (dentroDosLimites(x, y) && !visitado[x][y] && ehPreto(image.getRGB(x, y))) {
+            // Executa o flood fill no ponto inicial
+            FloodFillPilha.floodFill(image, x, y, novaCor);
+            visitado[x][y] = true; // Marca como visitado
+            SwingUtilities.invokeLater(() -> imageLabel.repaint());
+        }
+    }
+
+    private void verificarImagem(int novaCor) {
         new Thread(() -> {
-            if (x >= 0 && y >= 0 && x < image.getWidth() && y < image.getHeight()) {
-                floodFill(image, x, y, novaCor, 50);  // Passe apenas 'image', que é um BufferedImage
-                SwingUtilities.invokeLater(() -> imageLabel.repaint());  // Força o repintar após a modificação
-            } else {
-                System.out.println("Coordenadas fora dos limites da imagem.");
+            final int delay = 1;
+
+            // Criando uma pilha para armazenar os pontos pretos encontrados
+            Pilha pilhaPixels = new Pilha();
+
+            // Percorre a imagem e adiciona pixels pretos à pilha
+            for (int y = 0; y < image.getHeight(); y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    if (ehPreto(image.getRGB(x, y)) && !visitado[x][y]) {
+                        pilhaPixels.insere(new Pixel(x, y));
+                        visitado[x][y] = true;
+                    }
+                }
+            }
+
+            // Processa cada ponto da pilha
+            while (!pilhaPixels.estaVazia()) {
+                Pixel p = pilhaPixels.remover();
+                FloodFillPilha.floodFill(image, p.x, p.y, novaCor);
+
+                // Atualiza a interface gráfica
+                SwingUtilities.invokeLater(() -> imageLabel.repaint());
+
+                // Adiciona um pequeno delay para mostrar a pintura gradualmente
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
             }
         }).start();
     }
 
-    public static void floodFill(BufferedImage image, int x, int y, int novaCor, int tolerancia) {
-        int corOriginal = image.getRGB(x, y);
-
-        // Não impede o preenchimento se a cor for a mesma, pois a ideia é explorar vizinhos
-        if (corOriginal == novaCor) return; // Evita preenchimento desnecessário de áreas que já estão com a nova cor
-
-        int largura = image.getWidth();
-        int altura = image.getHeight();
-
-        Pilha pilha = new Pilha();
-        pilha.insere(new Pixel(x, y));
-
-        Set<Pixel> visitados = new HashSet<>(); // Conjunto de pixels já visitados
-
-        while (!pilha.estaVazia()) {
-            Pixel p = pilha.remover();
-            int px = p.x, py = p.y;
-
-            // Verifica se o pixel está dentro dos limites da imagem
-            if (px < 0 || py < 0 || px >= largura || py >= altura) continue;
-
-            // Verifica se o pixel foi visitado
-            if (visitados.contains(p)) continue;
-
-            // Marca o pixel como visitado
-            visitados.add(p);
-
-            // Verifica se a cor do pixel está dentro da tolerância da cor original
-            if (!corDentroDaTolerancia(image.getRGB(px, py), corOriginal, tolerancia)) continue;
-
-            // Preenche o pixel com a nova cor
-            image.setRGB(px, py, novaCor);
-
-            // Adiciona os vizinhos para serem processados
-            pilha.insere(new Pixel(px + 1, py));  // Direita
-            pilha.insere(new Pixel(px - 1, py));  // Esquerda
-            pilha.insere(new Pixel(px, py + 1));  // Abaixo
-            pilha.insere(new Pixel(px, py - 1));  // Acima
-        }
+    private boolean ehPreto(int cor) {
+        int r = (cor >> 16) & 0xFF;
+        int g = (cor >> 8) & 0xFF;
+        int b = cor & 0xFF;
+        return r < 100 && g < 100 && b < 100; // Detecta tons escuros
     }
 
-    // Método para verificar se o pixel é transparente
-    private static boolean isTransparente(int cor) {
-        return ((cor >> 24) & 0xFF) == 0; // Verifica se o canal alfa (transparência) é 0
-    }
-
-    private static boolean corDentroDaTolerancia(int cor, int corOriginal, int tolerancia) {
-        int r1 = (cor >> 16) & 0xFF;
-        int g1 = (cor >> 8) & 0xFF;
-        int b1 = cor & 0xFF;
-
-        int r2 = (corOriginal >> 16) & 0xFF;
-        int g2 = (corOriginal >> 8) & 0xFF;
-        int b2 = corOriginal & 0xFF;
-
-        // Verifique se a diferença entre as cores está dentro da tolerância
-        return Math.abs(r1 - r2) <= tolerancia && Math.abs(g1 - g2) <= tolerancia && Math.abs(b1 - b2) <= tolerancia;
+    private boolean dentroDosLimites(int x, int y) {
+        return x >= 0 && x < image.getWidth() && y >= 0 && y < image.getHeight();
     }
 
     public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
-        System.out.print("Digite a coordenada X para iniciar o Flood Fill: ");
-        int startX = scanner.nextInt();
-        System.out.print("Digite a coordenada Y para iniciar o Flood Fill: ");
-        int startY = scanner.nextInt();
-
-        SwingUtilities.invokeLater(() -> new FloodFillGUI("C:/Users/Usuario/Downloads/Trabalho-Estrutura-de-Dados-main/Trabalho-Estrutura-de-Dados-main/FloodFill Pilha/images/cara.png", startX, startY));
+        int startX = 60; // Coordenada X inicial
+        int startY = 60; // Coordenada Y inicial
+        SwingUtilities.invokeLater(() -> new FloodFillGUI("/home/bryan/IdeaProjects/TrabalhoEstrutura/src/imagens/bolaVolei.png", startX, startY));
     }
 }
